@@ -500,11 +500,18 @@ document.getElementById('form-inscricao').addEventListener('submit', async funct
                 color: { dark: '#111827', light: '#FFFFFF' },
             });
         } else {
-            // Fallback: Google Charts API (sem dependência JS)
+            // Fallback: api.qrserver.com (serviço gratuito e mantido ativamente)
             const img = document.createElement('img');
-            img.src   = 'https://chart.googleapis.com/chart?chs=240x240&cht=qr&choe=UTF-8&chl=' + encodeURIComponent(pixPayload);
-            img.alt   = 'QR Code PIX';
-            img.width = 240; img.height = 240;
+            img.alt    = 'QR Code PIX';
+            img.width  = 240;
+            img.height = 240;
+            img.style.imageRendering = 'pixelated';
+            img.onerror = function () {
+                // Última tentativa: quickchart.io
+                this.onerror = null;
+                this.src = 'https://quickchart.io/qr?text=' + encodeURIComponent(pixPayload) + '&size=240&ecLevel=M';
+            };
+            img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&ecc=M&data=' + encodeURIComponent(pixPayload);
             container.appendChild(img);
         }
 
