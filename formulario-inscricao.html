@@ -470,7 +470,10 @@ document.getElementById('form-inscricao').addEventListener('submit', async funct
         this.reset();
 
     } catch (err) {
-        alertEl.textContent = 'Erro ao processar inscrição. Verifique sua conexão e tente novamente.';
+        const msg = typeof QRCode === 'undefined'
+            ? 'Erro: biblioteca QR Code não carregou. Verifique sua conexão com a internet.'
+            : 'Erro ao processar inscrição: ' + err.message;
+        alertEl.textContent = msg;
         alertEl.style.display = 'block';
         console.error('[Erro]', err);
     }
@@ -504,7 +507,7 @@ function gerarPixPayload(chave, nome, cidade, valor, txid) {
         return `${id}${String(value.length).padStart(2, '0')}${value}`;
     }
 
-    // Remove acentos e caracteres especiais
+    // Remove acentos e caracteres especiais (U+0300–U+036F = diacríticos combinantes)
     function sanitize(str, max) {
         return str
             .normalize('NFD')
