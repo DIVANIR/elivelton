@@ -4,7 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inscrição - Evento</title>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <!-- QR Code: tenta 2 CDNs; usa Google Charts como fallback final -->
+    <script>
+    (function(){
+        function tryLoad(url){
+            return new Promise(function(res,rej){
+                var s=document.createElement('script');
+                s.src=url; s.onload=res; s.onerror=rej;
+                document.head.appendChild(s);
+            });
+        }
+        window._qrReady = tryLoad('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js')
+            .catch(function(){ return tryLoad('https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js'); })
+            .catch(function(){ window._qrFallback=true; });
+    })();
+    </script>
     <style>
         :root {
             --primary: #4F46E5;
@@ -172,7 +186,8 @@
             letter-spacing: -1px;
         }
 
-        #qrcode-canvas { margin: 0 auto 24px; display: block; border-radius: 8px; }
+        #qr-container { margin: 0 auto 24px; display: flex; justify-content: center; }
+        #qr-container canvas, #qr-container img { border-radius: 8px; display: block; }
 
         .pix-copy {
             display: flex;
@@ -277,27 +292,26 @@
                 </div>
             </div>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Denominação <span class="req">*</span></label>
-                    <select id="denominacao" required>
-                        <option value="" disabled selected>Selecione...</option>
-                        <option value="Assembleia de Deus">Assembleia de Deus</option>
-                        <option value="Batista">Batista</option>
-                        <option value="Adventista">Adventista</option>
-                        <option value="Católico">Católico</option>
-                        <option value="Outras">Outras</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>AD-BH Regional <span class="req">*</span></label>
-                    <select id="regional" required>
-                        <option value="" disabled selected>Selecione...</option>
-                        <option value="Eldorado">Eldorado</option>
-                        <option value="Outros">Outros</option>
-                        <option value="Nenhuma">Nenhuma</option>
-                    </select>
-                </div>
+            <div class="form-group">
+                <label>Denominação <span class="req">*</span></label>
+                <select id="denominacao" required>
+                    <option value="" disabled selected>Selecione...</option>
+                    <option value="Assembleia de Deus">Assembleia de Deus</option>
+                    <option value="Batista">Batista</option>
+                    <option value="Adventista">Adventista</option>
+                    <option value="Católico">Católico</option>
+                    <option value="Outras">Outras</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="regional-group" style="display:none">
+                <label>AD-BH Regional <span class="req">*</span></label>
+                <select id="regional">
+                    <option value="" disabled selected>Selecione...</option>
+                    <option value="Eldorado">Eldorado</option>
+                    <option value="Outros">Outros</option>
+                    <option value="Nenhuma">Nenhuma</option>
+                </select>
             </div>
 
             <hr class="divider">
@@ -323,7 +337,7 @@
 
         <div class="pix-amount" id="pix-amount">R$ 50,00</div>
 
-        <canvas id="qrcode-canvas"></canvas>
+        <div id="qr-container"></div>
 
         <div class="pix-copy">
             <input type="text" id="pix-code" readonly title="Código PIX Copia e Cola">
@@ -372,6 +386,20 @@ const valorFormatado = `R$ ${CONFIG.PIX_VALOR.toFixed(2).replace('.', ',')}`;
 document.getElementById('valor-display').textContent = valorFormatado;
 document.getElementById('pix-amount').textContent    = valorFormatado;
 
+// Mostra/oculta AD-BH Regional conforme denominação
+document.getElementById('denominacao').addEventListener('change', function () {
+    const group    = document.getElementById('regional-group');
+    const regional = document.getElementById('regional');
+    if (this.value === 'Assembleia de Deus') {
+        group.style.display = 'block';
+        regional.required   = true;
+    } else {
+        group.style.display = 'none';
+        regional.required   = false;
+        regional.value      = '';
+    }
+});
+
 // Máscara de telefone
 document.getElementById('telefone').addEventListener('input', function () {
     let v = this.value.replace(/\D/g, '').slice(0, 11);
@@ -405,8 +433,9 @@ document.getElementById('form-inscricao').addEventListener('submit', async funct
     const sexo        = document.getElementById('sexo').value;
     const denominacao = document.getElementById('denominacao').value;
     const regional    = document.getElementById('regional').value;
+    const regionalObrigatorio = denominacao === 'Assembleia de Deus';
 
-    if (!nome || !email || !telefone || !cpf || !sexo || !denominacao || !regional) {
+    if (!nome || !email || !telefone || !cpf || !sexo || !denominacao || (regionalObrigatorio && !regional)) {
         alertEl.textContent = 'Por favor, preencha todos os campos obrigatórios (*)';
         alertEl.style.display = 'block';
         return;
@@ -457,11 +486,27 @@ document.getElementById('form-inscricao').addEventListener('submit', async funct
 
         document.getElementById('pix-code').value = pixPayload;
 
-        await QRCode.toCanvas(document.getElementById('qrcode-canvas'), pixPayload, {
-            width:  240,
-            margin: 2,
-            color:  { dark: '#111827', light: '#FFFFFF' },
-        });
+        // Aguarda carregamento da biblioteca (máx 5s)
+        await window._qrReady;
+        const container = document.getElementById('qr-container');
+        container.innerHTML = '';
+
+        if (typeof QRCode !== 'undefined') {
+            // Biblioteca carregada com sucesso
+            const canvas = document.createElement('canvas');
+            container.appendChild(canvas);
+            await QRCode.toCanvas(canvas, pixPayload, {
+                width: 240, margin: 2,
+                color: { dark: '#111827', light: '#FFFFFF' },
+            });
+        } else {
+            // Fallback: Google Charts API (sem dependência JS)
+            const img = document.createElement('img');
+            img.src   = 'https://chart.googleapis.com/chart?chs=240x240&cht=qr&choe=UTF-8&chl=' + encodeURIComponent(pixPayload);
+            img.alt   = 'QR Code PIX';
+            img.width = 240; img.height = 240;
+            container.appendChild(img);
+        }
 
         // Exibe seção PIX
         const pixCard = document.getElementById('pix-card');
@@ -472,9 +517,7 @@ document.getElementById('form-inscricao').addEventListener('submit', async funct
         this.reset();
 
     } catch (err) {
-        const msg = typeof QRCode === 'undefined'
-            ? 'Erro: biblioteca QR Code não carregou. Verifique sua conexão com a internet.'
-            : 'Erro ao processar inscrição: ' + err.message;
+        const msg = 'Erro ao gerar QR Code: ' + err.message + '. Verifique sua conexão e tente novamente.';
         alertEl.textContent = msg;
         alertEl.style.display = 'block';
         console.error('[Erro]', err);
