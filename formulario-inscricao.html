@@ -4,21 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inscrição - Evento</title>
-    <!-- QR Code: tenta 2 CDNs; usa Google Charts como fallback final -->
-    <script>
-    (function(){
-        function tryLoad(url){
-            return new Promise(function(res,rej){
-                var s=document.createElement('script');
-                s.src=url; s.onload=res; s.onerror=rej;
-                document.head.appendChild(s);
-            });
-        }
-        window._qrReady = tryLoad('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js')
-            .catch(function(){ return tryLoad('https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js'); })
-            .catch(function(){ window._qrFallback=true; });
-    })();
-    </script>
     <style>
         :root {
             --primary: #4F46E5;
@@ -186,9 +171,6 @@
             letter-spacing: -1px;
         }
 
-        #qr-container { margin: 0 auto 24px; display: flex; justify-content: center; }
-        #qr-container canvas, #qr-container img { border-radius: 8px; display: block; }
-
         .pix-copy {
             display: flex;
             gap: 8px;
@@ -324,7 +306,7 @@
             </div>
 
             <button type="submit" class="btn" id="btn-submit">
-                Inscrever-se e Gerar QR Code PIX
+                Inscrever-se e Gerar Código PIX
             </button>
         </form>
     </div>
@@ -333,11 +315,9 @@
     <div class="pix-card" id="pix-card">
         <div class="success-icon">✅</div>
         <h2>Inscrição Registrada!</h2>
-        <p>Escaneie o QR Code abaixo para efetuar o pagamento via PIX</p>
+        <p>Copie o código abaixo e pague via <strong>PIX Copia e Cola</strong> no seu banco</p>
 
         <div class="pix-amount" id="pix-amount">R$ 50,00</div>
-
-        <div id="qr-container"></div>
 
         <div class="pix-copy">
             <input type="text" id="pix-code" readonly title="Código PIX Copia e Cola">
@@ -345,13 +325,15 @@
         </div>
 
         <div class="pix-instructions">
-            <strong>Como pagar via PIX:</strong>
+            <strong>Como pagar com PIX Copia e Cola:</strong>
             <ol>
+                <li>Clique no botão <strong>Copiar</strong> acima</li>
                 <li>Abra o aplicativo do seu banco</li>
-                <li>Acesse a área PIX</li>
-                <li>Escolha "Pagar com QR Code" ou "PIX Copia e Cola"</li>
-                <li>Escaneie o QR Code ou cole o código copiado</li>
-                <li>Confirme o valor e finalize o pagamento</li>
+                <li>Acesse a área <strong>PIX</strong></li>
+                <li>Escolha a opção <strong>"PIX Copia e Cola"</strong></li>
+                <li>Cole o código copiado no campo indicado</li>
+                <li>Confira o nome do beneficiário e o valor</li>
+                <li>Confirme o pagamento</li>
             </ol>
         </div>
     </div>
@@ -369,12 +351,7 @@ const CONFIG = {
     // URL do Google Apps Script (gerada após o deploy — veja apps-script.gs)
     APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxsGhSfR2yyoYETS4LVwtgyZ_r1tRshCOXweA3JGN22Z2jjTymUMorumMUvchR7BME/exec',
 
-    // Dados PIX
-    PIX_KEY:          '94a2dbd1-bca0-4f21-8ce6-992ae82c20d4',  // ex: 123e4567-e89b-...
-    PIX_BENEFICIARIO: 'Elivelton Neves da Costa',   // máx 25 chars, sem acentos
-    PIX_CIDADE:       'Contagem-MG',        // máx 15 chars, sem acentos
-    PIX_VALOR:        70.00,              // valor em R$
-    PIX_TXID:         'INSCRICAO',        // ID da transação (sem espaços/acentos)
+    PIX_VALOR: 70.00,  // valor em R$ (deve ser igual ao configurado no Apps Script)
 };
 // ================================================================
 
@@ -449,7 +426,7 @@ document.getElementById('form-inscricao').addEventListener('submit', async funct
 
     alertEl.style.display = 'none';
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>Enviando...';
+    btn.innerHTML = '<span class="spinner"></span>Registrando inscrição...';
 
     const dados = {
         nome,
@@ -465,55 +442,23 @@ document.getElementById('form-inscricao').addEventListener('submit', async funct
     };
 
     try {
-        // Envia para Google Sheets se URL configurada
-        if (CONFIG.APPS_SCRIPT_URL !== 'COLE_AQUI_A_URL_DO_SEU_APPS_SCRIPT') {
-            await fetch(CONFIG.APPS_SCRIPT_URL, {
-                method: 'POST',
-                mode:   'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body:   JSON.stringify(dados),
-            });
+        // Envia para Apps Script e recebe código PIX do PagSeguro
+        if (CONFIG.APPS_SCRIPT_URL === 'COLE_AQUI_A_URL_DO_SEU_APPS_SCRIPT') {
+            throw new Error('URL do Apps Script não configurada.');
         }
 
-        // Gera payload PIX
-        const pixPayload = gerarPixPayload(
-            CONFIG.PIX_KEY,
-            CONFIG.PIX_BENEFICIARIO,
-            CONFIG.PIX_CIDADE,
-            CONFIG.PIX_VALOR,
-            CONFIG.PIX_TXID
-        );
+        const response = await fetch(CONFIG.APPS_SCRIPT_URL, {
+            method:  'POST',
+            headers: { 'Content-Type': 'text/plain' }, // text/plain evita preflight CORS
+            body:    JSON.stringify(dados),
+        });
 
-        document.getElementById('pix-code').value = pixPayload;
+        if (!response.ok) throw new Error('Servidor retornou erro ' + response.status);
 
-        // Aguarda carregamento da biblioteca (máx 5s)
-        await window._qrReady;
-        const container = document.getElementById('qr-container');
-        container.innerHTML = '';
+        const resultado = await response.json();
+        if (resultado.status !== 'ok') throw new Error(resultado.message || 'Erro ao criar cobrança PIX');
 
-        if (typeof QRCode !== 'undefined') {
-            // Biblioteca carregada com sucesso
-            const canvas = document.createElement('canvas');
-            container.appendChild(canvas);
-            await QRCode.toCanvas(canvas, pixPayload, {
-                width: 240, margin: 2,
-                color: { dark: '#111827', light: '#FFFFFF' },
-            });
-        } else {
-            // Fallback: api.qrserver.com (serviço gratuito e mantido ativamente)
-            const img = document.createElement('img');
-            img.alt    = 'QR Code PIX';
-            img.width  = 240;
-            img.height = 240;
-            img.style.imageRendering = 'pixelated';
-            img.onerror = function () {
-                // Última tentativa: quickchart.io
-                this.onerror = null;
-                this.src = 'https://quickchart.io/qr?text=' + encodeURIComponent(pixPayload) + '&size=240&ecLevel=M';
-            };
-            img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&ecc=M&data=' + encodeURIComponent(pixPayload);
-            container.appendChild(img);
-        }
+        document.getElementById('pix-code').value = resultado.pixCode;
 
         // Exibe seção PIX
         const pixCard = document.getElementById('pix-card');
@@ -524,14 +469,14 @@ document.getElementById('form-inscricao').addEventListener('submit', async funct
         this.reset();
 
     } catch (err) {
-        const msg = 'Erro ao gerar QR Code: ' + err.message + '. Verifique sua conexão e tente novamente.';
+        const msg = 'Erro ao processar inscrição: ' + err.message + '. Verifique sua conexão e tente novamente.';
         alertEl.textContent = msg;
         alertEl.style.display = 'block';
         console.error('[Erro]', err);
     }
 
     btn.disabled = false;
-    btn.innerHTML = 'Inscrever-se e Gerar QR Code PIX';
+    btn.innerHTML = 'Inscrever-se e Gerar Código PIX';
 });
 
 function copiarPix() {
@@ -550,67 +495,7 @@ function copiarPix() {
     });
 }
 
-// ================================================================
-//  Gerador de Payload PIX — padrão BR Code / EMV
-//  Especificação: Banco Central do Brasil
-// ================================================================
-function gerarPixPayload(chave, nome, cidade, valor, txid) {
-    function field(id, value) {
-        return `${id}${String(value.length).padStart(2, '0')}${value}`;
-    }
-
-    // Remove acentos e caracteres especiais (U+0300–U+036F = diacríticos combinantes)
-    function sanitize(str, max) {
-        return str
-            .normalize('NFD')
-            .replace(/[̀-ͯ]/g, '')
-            .replace(/[^a-zA-Z0-9 ]/g, '')
-            .toUpperCase()
-            .substring(0, max);
-    }
-
-    const nomeLimpo   = sanitize(nome, 25);
-    const cidadeLimpa = sanitize(cidade, 15);
-    const txidLimpo   = (txid || '***').replace(/[^a-zA-Z0-9]/g, '').substring(0, 25) || '***';
-
-    // ID 26 — Merchant Account Information (PIX)
-    const merchantAccount = field('26',
-        field('00', 'br.gov.bcb.pix') +
-        field('01', chave)
-    );
-
-    // ID 62 — Additional Data Field (TXID)
-    const additionalData = field('62', field('05', txidLimpo));
-
-    // Monta payload sem CRC
-    const payload =
-        field('00', '01') +               // Payload Format Indicator
-        field('01', '11') +               // QR Code estático (11)
-        merchantAccount +
-        field('52', '0000') +             // Merchant Category Code
-        field('53', '986') +              // Moeda BRL (ISO 4217)
-        field('54', valor.toFixed(2)) +   // Valor
-        field('58', 'BR') +               // País
-        field('59', nomeLimpo) +          // Nome do beneficiário
-        field('60', cidadeLimpa) +        // Cidade
-        additionalData +
-        '6304';                            // Marcador CRC (sem valor ainda)
-
-    return payload + crc16(payload);
-}
-
-// CRC-16/CCITT-FALSE
-function crc16(str) {
-    let crc = 0xFFFF;
-    for (let i = 0; i < str.length; i++) {
-        crc ^= str.charCodeAt(i) << 8;
-        for (let j = 0; j < 8; j++) {
-            crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
-            crc &= 0xFFFF;
-        }
-    }
-    return crc.toString(16).toUpperCase().padStart(4, '0');
-}
+// O código PIX agora é gerado pelo PagSeguro via Apps Script.
 </script>
 </body>
 </html>
